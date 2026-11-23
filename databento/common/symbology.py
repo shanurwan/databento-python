@@ -250,8 +250,13 @@ class InstrumentMap:
 
         pos += left
 
-        if np_date < self._ends[pos]:
-            return self._symbols[pos]
+        # Intervals for one instrument can overlap, e.g. when two requested
+        # symbols map to the same instrument. The latest-starting interval may
+        # have ended while an earlier one still covers the date.
+        while pos >= left:
+            if np_date < self._ends[pos]:
+                return self._symbols[pos]
+            pos -= 1
 
         return None
 
@@ -318,6 +323,13 @@ class InstrumentMap:
             resolved = np.searchsorted(starts, dates_to_check, side="right") - 1
             valid = (resolved >= 0) & (dates_to_check < ends[resolved])
             resolved_unique[idx[valid]] = symbols[resolved[valid]]
+
+            # Fall back to an earlier, still-open interval when intervals overlap
+            for i in np.nonzero(~valid & (resolved > 0))[0]:
+                for pos in range(resolved[i] - 1, -1, -1):
+                    if dates_to_check[i] < ends[pos]:
+                        resolved_unique[idx[i]] = symbols[pos]
+                        break
 
         # Map the resolved symbols back to the result
         result[:] = resolved_unique[inverse]

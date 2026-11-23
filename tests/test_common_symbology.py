@@ -1029,6 +1029,72 @@ def test_instrument_map_resolve() -> None:
 
 
 @pytest.mark.parametrize(
+    "intervals",
+    [
+        pytest.param(
+            [
+                ("2026-09-14", "2026-09-16", "ES.v.0"),
+                ("2026-09-14", "2026-09-20", "ES.c.0"),
+            ],
+            id="same-start",
+        ),
+        pytest.param(
+            [
+                ("2026-09-14", "2026-09-20", "ES.c.0"),
+                ("2026-09-14", "2026-09-16", "ES.v.0"),
+            ],
+            id="same-start-reversed",
+        ),
+        pytest.param(
+            [
+                ("2026-09-10", "2026-09-20", "ES.c.0"),
+                ("2026-09-14", "2026-09-16", "ES.v.0"),
+            ],
+            id="nested",
+        ),
+    ],
+)
+def test_instrument_map_resolve_overlapping_intervals(
+    intervals: list[tuple[str, str, str]],
+) -> None:
+    """
+    Test that when two symbols map to the same instrument ID over overlapping
+    date ranges, a date covered by only one of them still resolves.
+
+    Continuous symbols with different roll rules (e.g. ES.c.0 and ES.v.0)
+    point to the same contract until one of them rolls.
+    """
+    # Arrange
+    instrument_map = InstrumentMap()
+    instrument_map._insert_intervals(
+        [42140870] * len(intervals),
+        [
+            MappingInterval(
+                start_date=pd.Timestamp(start).date(),
+                end_date=pd.Timestamp(end).date(),
+                symbol=symbol,
+            )
+            for start, end, symbol in intervals
+        ],
+    )
+    dates = np.array(
+        ["2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19"], dtype="datetime64[D]"
+    )
+
+    # Act
+    resolve_many_result = instrument_map.resolve_many(
+        np.full(dates.shape, 42140870, dtype="uint64"),
+        dates,
+    )
+    resolve_results = [instrument_map.resolve(42140870, date) for date in dates]
+
+    # Assert
+    assert resolve_many_result.tolist() == ["ES.c.0"] * 4
+    assert resolve_results == ["ES.c.0"] * 4
+    assert instrument_map.resolve(42140870, pd.Timestamp("2026-09-20").date()) is None
+
+
+@pytest.mark.parametrize(
     "dataset",
     Dataset,
 )
